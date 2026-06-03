@@ -4,6 +4,8 @@ import CanvasKitInit, {
   type ManagedSkottieAnimation,
 } from "canvaskit-wasm/full";
 
+import { Camera } from "@/lib/camera";
+
 let canvasKitPromise: Promise<CanvasKit> | null = null;
 
 /** Loads (and caches) the CanvasKit WASM module. */
@@ -17,11 +19,16 @@ export function loadCanvasKit(): Promise<CanvasKit> {
   return canvasKitPromise;
 }
 
+// How aggressively a wheel/pinch gesture changes zoom.
+const ZOOM_SENSITIVITY = 0.0015;
+
 export interface LottiePlayerCallbacks {
   /** Fired every rendered frame with the playhead frame and total frame count. */
   onFrame?: (currentFrame: number, totalFrames: number) => void;
   /** Fired whenever the play/pause state changes. */
   onPlayStateChange?: (playing: boolean) => void;
+  /** Fired whenever the camera (pan/zoom) changes, with the current zoom factor. */
+  onCameraChange?: (zoom: number) => void;
 }
 
 /**
@@ -30,6 +37,10 @@ export interface LottiePlayerCallbacks {
  * is recreated on resize. The playhead is tracked in frames; playback advances
  * it off wall-clock time scaled by the animation's fps, so it plays at native
  * speed regardless of the render frame rate.
+ *
+ * A {@link Camera} provides Figma-style pan/zoom over the whole scene: scroll
+ * to pan, ⌘/ctrl+scroll or pinch to zoom (anchored on the cursor), drag to pan,
+ * and double-click to reset.
  */
 export class LottiePlayer {
   private surface: Surface | null = null;
@@ -37,8 +48,12 @@ export class LottiePlayer {
   private playing = false;
   private currentFrame = 0;
   private lastTs = 0;
+  private dirty = true;
   private readonly fps: number;
   private readonly totalFrames: number;
+
+  private readonly camera = new Camera();
+  private dragging = false;
 
   constructor(
     private readonly ck: CanvasKit,
@@ -49,6 +64,7 @@ export class LottiePlayer {
     this.fps = animation.fps() || 60;
     this.totalFrames = Math.max(1, Math.round(animation.duration() * this.fps));
     this.resize();
+    this.attachInput();
     this.rafId = requestAnimationFrame(this.tick);
   }
 
@@ -72,6 +88,10 @@ export class LottiePlayer {
 
   getTotalFrames(): number {
     return this.totalFrames;
+  }
+
+  getZoom(): number {
+    return this.camera.zoom;
   }
 
   isPlaying(): boolean {
@@ -98,9 +118,20 @@ export class LottiePlayer {
   /** Seeks to an absolute frame. */
   seek(frame: number): void {
     this.currentFrame = Math.max(0, Math.min(frame, this.totalFrames));
-    this.lastTs = 0;
-    this.draw();
+    this.dirty = true;
     this.callbacks.onFrame?.(this.currentFrame, this.totalFrames);
+  }
+
+  /** Zooms by `factor` around the canvas center (for on-screen +/- controls). */
+  zoomByCentered(factor: number): void {
+    this.camera.zoomAt(factor, this.canvas.width / 2, this.canvas.height / 2);
+    this.onCameraChanged();
+  }
+
+  /** Resets pan/zoom back to the fitted view. */
+  resetCamera(): void {
+    this.camera.reset();
+    this.onCameraChanged();
   }
 
   /** Syncs the backing store to the element's CSS size and recreates the surface. */
@@ -120,15 +151,88 @@ export class LottiePlayer {
       throw new Error("Could not create a WebGL surface for CanvasKit.");
     }
     this.surface = surface;
-    this.draw();
+    this.dirty = true;
   }
 
   dispose(): void {
     cancelAnimationFrame(this.rafId);
+    this.detachInput();
     this.surface?.delete();
     this.surface = null;
     this.animation.delete();
   }
+
+  // --- Camera input -------------------------------------------------------
+
+  private attachInput(): void {
+    this.canvas.style.cursor = "grab";
+    this.canvas.style.touchAction = "none";
+    this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
+    this.canvas.addEventListener("pointerdown", this.onPointerDown);
+    this.canvas.addEventListener("dblclick", this.onDoubleClick);
+    window.addEventListener("pointermove", this.onPointerMove);
+    window.addEventListener("pointerup", this.onPointerUp);
+  }
+
+  private detachInput(): void {
+    this.canvas.removeEventListener("wheel", this.onWheel);
+    this.canvas.removeEventListener("pointerdown", this.onPointerDown);
+    this.canvas.removeEventListener("dblclick", this.onDoubleClick);
+    window.removeEventListener("pointermove", this.onPointerMove);
+    window.removeEventListener("pointerup", this.onPointerUp);
+  }
+
+  /** Converts viewport coordinates to the canvas's device-pixel space. */
+  private toDevice(clientX: number, clientY: number): { x: number; y: number } {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = this.canvas.getBoundingClientRect();
+    return { x: (clientX - rect.left) * dpr, y: (clientY - rect.top) * dpr };
+  }
+
+  private onWheel = (e: WheelEvent): void => {
+    e.preventDefault();
+    // Trackpad pinch arrives as a wheel event with ctrlKey set; ⌘/ctrl+scroll
+    // zooms too. A plain scroll pans.
+    if (e.ctrlKey || e.metaKey) {
+      const { x, y } = this.toDevice(e.clientX, e.clientY);
+      this.camera.zoomAt(Math.exp(-e.deltaY * ZOOM_SENSITIVITY), x, y);
+    } else {
+      const dpr = window.devicePixelRatio || 1;
+      this.camera.panBy(-e.deltaX * dpr, -e.deltaY * dpr);
+    }
+    this.onCameraChanged();
+  };
+
+  private onPointerDown = (e: PointerEvent): void => {
+    if (e.button !== 0 && e.button !== 1) return; // left or middle drag
+    this.dragging = true;
+    this.canvas.style.cursor = "grabbing";
+  };
+
+  private onPointerMove = (e: PointerEvent): void => {
+    if (!this.dragging) return;
+    const dpr = window.devicePixelRatio || 1;
+    this.camera.panBy(e.movementX * dpr, e.movementY * dpr);
+    this.onCameraChanged();
+  };
+
+  private onPointerUp = (): void => {
+    if (!this.dragging) return;
+    this.dragging = false;
+    this.canvas.style.cursor = "grab";
+  };
+
+  private onDoubleClick = (): void => {
+    this.camera.reset();
+    this.onCameraChanged();
+  };
+
+  private onCameraChanged(): void {
+    this.dirty = true;
+    this.callbacks.onCameraChange?.(this.camera.zoom);
+  }
+
+  // --- Rendering ----------------------------------------------------------
 
   private tick = (ts: number): void => {
     if (this.playing) {
@@ -142,7 +246,10 @@ export class LottiePlayer {
       this.lastTs = ts;
       this.draw();
       this.callbacks.onFrame?.(this.currentFrame, this.totalFrames);
+    } else if (this.dirty) {
+      this.draw();
     }
+    this.dirty = false;
     this.rafId = requestAnimationFrame(this.tick);
   };
 
@@ -160,8 +267,12 @@ export class LottiePlayer {
     const left = (cw - dw) / 2;
     const top = (ch - dh) / 2;
 
+    canvas.save();
+    this.camera.apply(canvas);
     this.animation.seekFrame(this.currentFrame);
     this.animation.render(canvas, this.ck.LTRBRect(left, top, left + dw, top + dh));
+    canvas.restore();
+
     this.surface.flush();
   }
 }

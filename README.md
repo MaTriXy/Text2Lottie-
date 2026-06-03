@@ -9,6 +9,9 @@ React + shadcn/ui + TypeScript control surface.
   renders the animation onto a WebGL surface
 - A floating control card (play/pause, frame-based seek slider, current
   frame / total frames + fps)
+- A Figma-style canvas camera: scroll to pan, ⌘/ctrl+scroll or pinch to zoom
+  (anchored on the cursor), drag to pan, double-click to reset; plus a zoom
+  control pill (−/+ and a click-to-reset percentage)
 
 ## Getting started
 
@@ -26,7 +29,12 @@ Then open the printed local URL.
   in frames and seeked via Skottie's `seekFrame`; during playback it advances
   off wall-clock time scaled by the animation's fps (so it plays at native
   speed regardless of render frame rate). The surface is recreated on resize and
-  the animation is letterboxed to fit the canvas.
+  the animation is letterboxed to fit the canvas. The player also owns the
+  camera input handling and repaints on demand (a dirty flag) so pan/zoom stays
+  responsive even while paused.
+- [`src/lib/camera.ts`](src/lib/camera.ts) — a small `Camera` class holding the
+  pan/zoom state and the `screen = scene * zoom + (x, y)` math, including
+  cursor-anchored zoom. Applied to the Skia canvas between `save`/`restore`.
 - [`src/App.tsx`](src/App.tsx) — fetches `/lottie.json` at startup, wires the
   player to React state, and lays out the full-screen canvas + control card.
 - [`src/components/PlaybackControls.tsx`](src/components/PlaybackControls.tsx) —

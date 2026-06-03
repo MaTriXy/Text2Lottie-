@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { PlaybackControls } from "@/components/PlaybackControls";
+import { ZoomControls } from "@/components/ZoomControls";
 import { LottiePlayer } from "@/lib/lottie-player";
 
 // The Lottie file lives in /public and is fetched at startup.
@@ -14,6 +15,7 @@ export default function App() {
   const [currentFrame, setCurrentFrame] = useState(0);
   const [totalFrames, setTotalFrames] = useState(0);
   const [fps, setFps] = useState(0);
+  const [zoom, setZoom] = useState(1);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -37,6 +39,7 @@ export default function App() {
             setTotalFrames(total);
           },
           onPlayStateChange: setPlaying,
+          onCameraChange: setZoom,
         });
         if (disposed) {
           player.dispose();
@@ -71,6 +74,15 @@ export default function App() {
           {error}
         </div>
       )}
+
+      <div className="pointer-events-none absolute left-0 top-0 flex justify-end p-4 sm:p-6">
+        <ZoomControls
+          zoom={zoom}
+          onZoomIn={() => playerRef.current?.zoomByCentered(1.2)}
+          onZoomOut={() => playerRef.current?.zoomByCentered(1 / 1.2)}
+          onReset={() => playerRef.current?.resetCamera()}
+        />
+      </div>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4 sm:p-6">
         <PlaybackControls
