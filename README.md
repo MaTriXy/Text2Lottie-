@@ -1,7 +1,9 @@
 # lottie-experiments
 
 A full-screen Lottie player built on **Skia CanvasKit (Skottie)**, with a
-React + shadcn/ui + TypeScript control surface.
+React + shadcn/ui + TypeScript control surface. Built to **generate a Lottie
+animation with an LLM and watch it play live**: the agent writes
+`public/lottie.json`, the dev server hot-reloads it.
 
 - Vite + React 18 + TypeScript
 - Tailwind v4 + shadcn/ui (`new-york`) components
@@ -41,11 +43,31 @@ Then open the printed local URL.
   the floating shadcn `Card` with the play/pause button, seek `Slider`, and time
   readout.
 
-## Swapping the animation
+## Generating an animation with an LLM
 
-Replace [`public/lottie.json`](public/lottie.json) with any Lottie JSON. Note
-that Skottie expects shape elements wrapped in a group (`"ty": "gr"` with an
-`it` array) — flat shape lists render blank.
+This is the intended workflow:
+
+1. **Scaffold** a fresh project (optional — this repo already is one):
+   ```bash
+   npm create lottie-experiments@latest my-animation
+   ```
+   See [`create-lottie-experiments/`](create-lottie-experiments/) for the
+   publishable scaffolder. The repo root is the single source of truth;
+   `template/` is regenerated from it by `sync.mjs` (also on `prepack`).
+2. **Run** `npm run dev`.
+3. **Point a coding agent at the repo.** It reads [`CLAUDE.md`](CLAUDE.md) and the
+   [`write-lottie` skill](.claude/skills/write-lottie/SKILL.md), then writes a
+   renderable Lottie to `public/lottie.json`. A Vite dev plugin
+   ([`vite.config.ts`](vite.config.ts)) watches that file and **full-reloads the
+   page on save**, so the animation appears immediately.
+
+## Swapping the animation manually
+
+Replace [`public/lottie.json`](public/lottie.json) with any Lottie JSON; the dev
+server reloads it on save. Note that Skottie expects shape elements wrapped in a
+group (`"ty": "gr"` with an `it` array) — flat shape lists render blank. The
+[`write-lottie` skill](.claude/skills/write-lottie/SKILL.md) documents the full
+set of Skottie gotchas.
 
 ## CanvasKit wasm
 
