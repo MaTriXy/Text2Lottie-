@@ -11,8 +11,9 @@ export default function App() {
   const playerRef = useRef<LottiePlayer | null>(null);
 
   const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [currentFrame, setCurrentFrame] = useState(0);
+  const [totalFrames, setTotalFrames] = useState(0);
+  const [fps, setFps] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -31,9 +32,9 @@ export default function App() {
         if (disposed) return;
 
         const player = await LottiePlayer.create(canvas, json, {
-          onFrame: (t, d) => {
-            setCurrentTime(t);
-            setDuration(d);
+          onFrame: (frame, total) => {
+            setCurrentFrame(frame);
+            setTotalFrames(total);
           },
           onPlayStateChange: setPlaying,
         });
@@ -42,7 +43,8 @@ export default function App() {
           return;
         }
         playerRef.current = player;
-        setDuration(player.getDuration());
+        setTotalFrames(player.getTotalFrames());
+        setFps(player.getFps());
         player.play();
       } catch (e) {
         if (!disposed) setError(e instanceof Error ? e.message : String(e));
@@ -73,10 +75,11 @@ export default function App() {
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4 sm:p-6">
         <PlaybackControls
           playing={playing}
-          currentTime={currentTime}
-          duration={duration}
+          currentFrame={currentFrame}
+          totalFrames={totalFrames}
+          fps={fps}
           onToggle={() => playerRef.current?.toggle()}
-          onSeek={(seconds) => playerRef.current?.seek(seconds)}
+          onSeek={(frame) => playerRef.current?.seek(frame)}
         />
       </div>
     </div>

@@ -4,29 +4,27 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 
-function formatTime(seconds: number): string {
-  const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
-  const m = Math.floor(safe / 60);
-  const s = Math.floor(safe % 60);
-  const cs = Math.floor((safe * 100) % 100);
-  return `${m}:${s.toString().padStart(2, "0")}.${cs.toString().padStart(2, "0")}`;
-}
-
 interface PlaybackControlsProps {
   playing: boolean;
-  currentTime: number;
-  duration: number;
+  currentFrame: number;
+  totalFrames: number;
+  fps: number;
   onToggle: () => void;
-  onSeek: (seconds: number) => void;
+  onSeek: (frame: number) => void;
 }
 
 export function PlaybackControls({
   playing,
-  currentTime,
-  duration,
+  currentFrame,
+  totalFrames,
+  fps,
   onToggle,
   onSeek,
 }: PlaybackControlsProps) {
+  const max = Math.max(0, totalFrames - 1);
+  const frame = Math.min(Math.round(currentFrame), max);
+  const pad = String(max).length;
+
   return (
     <Card className="pointer-events-auto w-full max-w-xl gap-0 py-3 backdrop-blur-md bg-card/80 border-border/60 shadow-lg">
       <CardContent className="flex items-center gap-4">
@@ -42,15 +40,18 @@ export function PlaybackControls({
         <Slider
           className="flex-1"
           min={0}
-          max={duration || 1}
-          step={0.001}
-          value={[Math.min(currentTime, duration || 1)]}
+          max={max || 1}
+          step={1}
+          value={[frame]}
           onValueChange={([v]) => onSeek(v)}
           aria-label="Seek"
         />
 
-        <div className="w-28 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground">
-          {formatTime(currentTime)} / {formatTime(duration)}
+        <div className="shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground">
+          <span className="text-foreground">{String(frame).padStart(pad, "0")}</span>
+          {" / "}
+          {max}
+          <span className="ml-2 text-muted-foreground/70">{fps} fps</span>
         </div>
       </CardContent>
     </Card>

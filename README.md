@@ -7,7 +7,8 @@ React + shadcn/ui + TypeScript control surface.
 - Tailwind v4 + shadcn/ui (`new-york`) components
 - Skia `canvaskit-wasm` (the **full** build, which includes the Skottie module)
   renders the animation onto a WebGL surface
-- A floating control card (play/pause, seek slider, current time / duration)
+- A floating control card (play/pause, frame-based seek slider, current
+  frame / total frames + fps)
 
 ## Getting started
 
@@ -21,9 +22,11 @@ Then open the printed local URL.
 ## How it works
 
 - [`src/lib/lottie-player.ts`](src/lib/lottie-player.ts) — `LottiePlayer` owns the
-  CanvasKit surface and a `requestAnimationFrame` loop. Playback is driven off
-  wall-clock time (so speed is independent of frame rate), the surface is
-  recreated on resize, and the animation is letterboxed to fit the canvas.
+  CanvasKit surface and a `requestAnimationFrame` loop. The playhead is tracked
+  in frames and seeked via Skottie's `seekFrame`; during playback it advances
+  off wall-clock time scaled by the animation's fps (so it plays at native
+  speed regardless of render frame rate). The surface is recreated on resize and
+  the animation is letterboxed to fit the canvas.
 - [`src/App.tsx`](src/App.tsx) — fetches `/lottie.json` at startup, wires the
   player to React state, and lays out the full-screen canvas + control card.
 - [`src/components/PlaybackControls.tsx`](src/components/PlaybackControls.tsx) —

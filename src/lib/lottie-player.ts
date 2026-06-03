@@ -18,8 +18,8 @@ export function loadCanvasKit(): Promise<CanvasKit> {
 }
 
 export interface LottiePlayerCallbacks {
-  /** Fired every rendered frame with playhead position and total duration (seconds). */
-  onFrame?: (currentTime: number, duration: number) => void;
+  /** Fired every rendered frame with the playhead frame and total frame count. */
+  onFrame?: (currentFrame: number, totalFrames: number) => void;
   /** Fired whenever the play/pause state changes. */
   onPlayStateChange?: (playing: boolean) => void;
 }
@@ -27,16 +27,18 @@ export interface LottiePlayerCallbacks {
 /**
  * Renders a Lottie animation onto a <canvas> using Skia's Skottie module via
  * CanvasKit. Owns its own requestAnimationFrame loop and a WebGL surface that
- * is recreated on resize. Drives the animation off wall-clock time so playback
- * speed is independent of the render frame rate.
+ * is recreated on resize. The playhead is tracked in frames; playback advances
+ * it off wall-clock time scaled by the animation's fps, so it plays at native
+ * speed regardless of the render frame rate.
  */
 export class LottiePlayer {
   private surface: Surface | null = null;
   private rafId = 0;
   private playing = false;
-  private currentTime = 0;
+  private currentFrame = 0;
   private lastTs = 0;
-  private readonly duration: number;
+  private readonly fps: number;
+  private readonly totalFrames: number;
 
   constructor(
     private readonly ck: CanvasKit,
@@ -44,7 +46,8 @@ export class LottiePlayer {
     private readonly animation: ManagedSkottieAnimation,
     private readonly callbacks: LottiePlayerCallbacks = {}
   ) {
-    this.duration = animation.duration();
+    this.fps = animation.fps() || 60;
+    this.totalFrames = Math.max(1, Math.round(animation.duration() * this.fps));
     this.resize();
     this.rafId = requestAnimationFrame(this.tick);
   }
@@ -63,8 +66,12 @@ export class LottiePlayer {
     return new LottiePlayer(ck, canvas, animation, callbacks);
   }
 
-  getDuration(): number {
-    return this.duration;
+  getFps(): number {
+    return this.fps;
+  }
+
+  getTotalFrames(): number {
+    return this.totalFrames;
   }
 
   isPlaying(): boolean {
@@ -74,7 +81,7 @@ export class LottiePlayer {
   play(): void {
     if (this.playing) return;
     this.playing = true;
-    this.lastTs = 0; // reset so the first frame after resume has no jump
+    this.lastTs = 0; // reset so the first tick after resume has no jump
     this.callbacks.onPlayStateChange?.(true);
   }
 
@@ -88,12 +95,12 @@ export class LottiePlayer {
     this.playing ? this.pause() : this.play();
   }
 
-  /** Seeks to an absolute time in seconds. */
-  seek(seconds: number): void {
-    this.currentTime = Math.max(0, Math.min(seconds, this.duration));
+  /** Seeks to an absolute frame. */
+  seek(frame: number): void {
+    this.currentFrame = Math.max(0, Math.min(frame, this.totalFrames));
     this.lastTs = 0;
     this.draw();
-    this.callbacks.onFrame?.(this.currentTime, this.duration);
+    this.callbacks.onFrame?.(this.currentFrame, this.totalFrames);
   }
 
   /** Syncs the backing store to the element's CSS size and recreates the surface. */
@@ -127,14 +134,14 @@ export class LottiePlayer {
     if (this.playing) {
       if (this.lastTs !== 0) {
         const dt = (ts - this.lastTs) / 1000;
-        this.currentTime += dt;
-        if (this.currentTime >= this.duration) {
-          this.currentTime %= this.duration; // loop
+        this.currentFrame += dt * this.fps;
+        if (this.currentFrame >= this.totalFrames) {
+          this.currentFrame %= this.totalFrames; // loop
         }
       }
       this.lastTs = ts;
       this.draw();
-      this.callbacks.onFrame?.(this.currentTime, this.duration);
+      this.callbacks.onFrame?.(this.currentFrame, this.totalFrames);
     }
     this.rafId = requestAnimationFrame(this.tick);
   };
@@ -153,7 +160,7 @@ export class LottiePlayer {
     const left = (cw - dw) / 2;
     const top = (ch - dh) / 2;
 
-    this.animation.seek(this.duration > 0 ? this.currentTime / this.duration : 0);
+    this.animation.seekFrame(this.currentFrame);
     this.animation.render(canvas, this.ck.LTRBRect(left, top, left + dw, top + dh));
     this.surface.flush();
   }
