@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="text-to-lottie.gif" alt="Text to Lottie" width="100%" />
+</p>
+
 # Text-To-Lottie
 
 This project includes a full-screen Lottie player built on **Skia CanvasKit (Skottie)**, with a
