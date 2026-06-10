@@ -30,7 +30,7 @@ Then ask your coding agent to generate a Lottie animation using `text-to-lottie`
 Example prompt:
 > Create a Lottie animation from the SVG path in https://github.com/JaceThings/SF-Hello/blob/main/SVG/hello-en.svg. Reveal the path with an animation that follows the natural path direction. Apply a premium apple themed gradient to the path. Use ease-in-out timing, a transparent background, and preserve the original SVG geometry.
 
-The agent will setup a harness and can inspect/edit the generated lottie in the with the included player.
+The agent will setup a harness that allows you to inspect/edit the generated lottie with the included player.
 
 ## Prompt guide
 
@@ -72,10 +72,6 @@ Generated animations can be used directly as Lottie JSON files or imported into 
 ```
 
 ### React Native
-```bash
-npm install lottie-react-native
-``` 
-
 ```typescript
 import LottieView from "lottie-react-native";
 
