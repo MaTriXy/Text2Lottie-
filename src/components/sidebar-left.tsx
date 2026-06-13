@@ -1,7 +1,14 @@
+import { For, Show } from "solid-js";
+import { useNavigate, useParams } from "@solidjs/router";
 import { Icon } from "@/components/ui/icon";
+import { useScenes } from "@/context/scenes";
 import { Button } from "./ui/button";
 
 export function SidebarLeft() {
+  const params = useParams();
+  const navigate = useNavigate();
+  const { projects } = useScenes();
+
   return (
     <div class="absolute left-4 top-4 flex flex-col w-[236px] max-h-full rounded-2xl gap-0 bg-background border border-border text-muted-foreground">
       <div class="flex items-center justify-between h-12 px-3">
@@ -20,19 +27,28 @@ export function SidebarLeft() {
             <Icon name="plus-add" />
           </Button>
         </div>
-        <button class="flex items-center justify-between h-7 bg-muted rounded-md px-0.5 gap-1.5 my-0.5 flex-1 text-foreground">
-          <Icon name="folder" />
-          <span class="text-xxs">Main Project</span>
-          <Icon name="confirm-check" class="ml-auto" />
-        </button>
-        <button class="flex items-center h-7 rounded-md px-0.5 gap-1.5 my-0.5 flex-1 text-muted-foreground">
-          <Icon name="folder" />
-          <span class="text-xxs">GitHub Banner</span>
-        </button>
-        <button class="flex items-center h-7 rounded-md px-0.5 gap-1.5 my-0.5 flex-1 text-muted-foreground">
-          <Icon name="folder" />
-          <span class="text-xxs">Instagram Reels</span>
-        </button>
+        <For each={projects()}>
+          {(project) => {
+            const active = () => project.slug === params.project;
+            return (
+              <button
+                type="button"
+                onClick={() => navigate(`/${project.slug}/${project.scenes[0]?.slug ?? ""}`)}
+                class="flex items-center h-7 rounded-md px-0.5 gap-1.5 my-0.5 flex-1"
+                classList={{
+                  "bg-muted text-foreground": active(),
+                  "text-muted-foreground": !active(),
+                }}
+              >
+                <Icon name="folder" />
+                <span class="text-xxs">{project.label}</span>
+                <Show when={active()}>
+                  <Icon name="confirm-check" class="ml-auto" />
+                </Show>
+              </button>
+            );
+          }}
+        </For>
       </div>
     </div>
   )

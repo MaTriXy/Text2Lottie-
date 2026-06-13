@@ -1,6 +1,7 @@
 import { Accessor, createContext, createEffect, createResource, createMemo, createSignal, onCleanup, onMount, Resource, untrack, useContext, type JSX } from 'solid-js';
-import { useSearchParams } from "@solidjs/router";
-import { ControlMeta, AnimationSlot } from '@/types';
+import { useParams, useSearchParams } from "@solidjs/router";
+import { ControlMeta, AnimationSlot, Scene } from '@/types';
+import { useScenes } from '@/context/scenes';
 import CanvasKitInit from "canvaskit-wasm/full";
 import type { CanvasKit, Surface, ManagedSkottieAnimation, Font, Paint, Typeface } from "canvaskit-wasm/full";
 
@@ -11,8 +12,6 @@ const INITIAL_MARGIN_Y = 100; // CSS px above and below the animation
 const LABEL_FONT_SIZE = 11; // CSS px, screen space (does not scale with zoom)
 const LABEL_GAP_Y = 7; // CSS px between the label baseline and the frame
 const LABEL_MIN_WIDTH = 24; // CSS px the label may occupy on a tiny frame
-const LOTTIE_URL = "/lottie.json";
-const CONTROLS_URL = "/controls.json";
 const LABEL_FONT_URL = new URL('@/assets/fonts/Inter-VariableFont_opsz,wght.ttf', import.meta.url).toString();
 
 const CanvasContext = createContext<{
@@ -44,12 +43,19 @@ export function CanvasProvider(props: { children: JSX.Element }) {
   let dirty = true;
 
   const observer = new ResizeObserver(() => resize());
+  const params = useParams();
+  const { findScene } = useScenes();
   const [searchParams] = useSearchParams();
   const [playing, setPlaying] = createSignal(false);
   const [currentFrame, setCurrentFrame] = createSignal(0);
   const [canvasKit] = createResource(loadCanvasKit);
-  const [lottie] = createResource(loadLottie);
-  const [controls] = createResource(loadControlsMeta);
+  const currentScene = createMemo(() => {
+    const { project, scene } = params;
+    if (!project || !scene) return null;
+    return findScene(project, scene) ?? null;
+  });
+  const [sceneData] = createResource(currentScene, loadScene);
+  const [controls] = createResource(currentScene, loadControlsMeta);
   const [labelTypeface] = createResource(canvasKit, loadLabelTypeface);
   const [camera, setCamera] = createSignal({
     x: 0,
@@ -57,15 +63,16 @@ export function CanvasProvider(props: { children: JSX.Element }) {
     zoom: 1,
   });
   const zoom = () => camera().zoom;
-  const animation = createMemo(() => {
+  const animation = createMemo<ManagedSkottieAnimation | null>((prev) => {
+    prev?.delete(); // dispose the previous scene's animation on swap
     const ck = canvasKit();
-    const file = lottie();
-    if (!ck || !file) return null;
-    return ck.MakeManagedAnimation(file);
+    const data = sceneData();
+    if (!ck || !data) return null;
+    return ck.MakeManagedAnimation(data.json, data.assets);
   });
   const animationName = createMemo(() => {
     try {
-      const nm = (JSON.parse(lottie() ?? "") as { nm?: unknown }).nm;
+      const nm = (JSON.parse(sceneData()?.json ?? "") as { nm?: unknown }).nm;
       if (typeof nm === "string" && nm.trim()) return nm.trim();
     } catch { /** ignore */ }
     return "Animation 1";
@@ -129,14 +136,19 @@ export function CanvasProvider(props: { children: JSX.Element }) {
   });
 
   createEffect(() => {
+    if (playing()) { lastTs = 0; }
+  });
+
+  createEffect(() => {
     const raw = searchParams.frame;
+    const total = totalFrames();
     untrack(() => {
       const frame = raw != null ? Number(raw) : null;
       if (frame != null && Number.isFinite(frame)) {
-        pause();
+        setPlaying(false);
         seek(frame);
-      } else {
-        play();
+      } else if (total > 0) {
+        setPlaying(true);
       }
     });
   });
@@ -169,21 +181,7 @@ export function CanvasProvider(props: { children: JSX.Element }) {
     dirty = true;
   }
 
-  const play = () => {
-    if (playing()) return;
-    setPlaying(true);
-    lastTs = 0; // reset so the first tick after resume has no jump
-  };
-
-  const pause = () => {
-    if (!playing()) return;
-    setPlaying(false);
-  };
-
-  const togglePlayback = () => {
-    if (playing()) pause();
-    else play();
-  };
+  const togglePlayback = () => setPlaying((v) => !v);
 
   const seek = (frame: number) => {
     setCurrentFrame(Math.max(0, Math.min(frame, totalFrames())))
@@ -413,8 +411,10 @@ export function CanvasProvider(props: { children: JSX.Element }) {
         zoomByCentered,
         resetCamera,
       }}>
-      <canvas ref={canvas} id="main-canvas" class="block h-full w-full" />
-      {props.children}
+      <div class="relative h-screen w-screen bg-canvas">
+        <canvas ref={canvas} id="main-canvas" class="block h-full w-full" />
+        {props.children}
+      </div>
     </CanvasContext.Provider>
   );
 }
@@ -431,14 +431,26 @@ function loadCanvasKit(): Promise<CanvasKit> {
   return CanvasKitInit({ locateFile: () => "/canvaskit.wasm" })
 }
 
-async function loadLottie() {
-  const res = await fetch(LOTTIE_URL);
-
+async function loadScene(scene: Scene): Promise<{ json: string; assets: Record<string, ArrayBuffer> }> {
+  const res = await fetch(scene.lottie);
   if (!res.ok) {
-    throw new Error(`Failed to load ${LOTTIE_URL} (HTTP ${res.status})`);
+    throw new Error(`Failed to load ${scene.lottie} (HTTP ${res.status})`);
   }
+  const json = await res.text();
 
-  return await res.text();
+  // Fetch image assets keyed by filename, matching the lottie's `assets[].p` values
+  // so MakeManagedAnimation can resolve them.
+  const assets: Record<string, ArrayBuffer> = {};
+  await Promise.all(
+    scene.images.map(async (url) => {
+      const imgRes = await fetch(url);
+      if (imgRes.ok) {
+        assets[url.split("/").pop()!] = await imgRes.arrayBuffer();
+      }
+    }),
+  );
+
+  return { json, assets };
 }
 
 async function loadLabelTypeface(ck: CanvasKit): Promise<Typeface | null> {
@@ -451,9 +463,10 @@ async function loadLabelTypeface(ck: CanvasKit): Promise<Typeface | null> {
   }
 }
 
-async function loadControlsMeta(): Promise<Record<string, ControlMeta>> {
+async function loadControlsMeta(scene: Scene): Promise<Record<string, ControlMeta>> {
+  if (!scene.controls) return {};
   try {
-    const res = await fetch(CONTROLS_URL);
+    const res = await fetch(scene.controls);
     if (!res.ok) return {};
     const data = (await res.json()) as { controls?: ControlMeta[] };
     return Object.fromEntries((data.controls ?? []).map((c) => [c.sid, c]));

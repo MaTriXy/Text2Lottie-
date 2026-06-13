@@ -4,13 +4,15 @@ import { defineConfig } from 'vite';
 import solidSvg from 'vite-plugin-solid-svg';
 import solidPlugin from 'vite-plugin-solid';
 import devtools from 'solid-devtools/vite';
+import { scenesPlugin } from './vite-plugins/scenes';
 
 export default defineConfig({
   plugins: [
-    devtools(), 
+    devtools(),
     solidPlugin(),
     tailwindcss(),
     solidSvg({ defaultAsComponent: true }),
+    scenesPlugin(),
   ],
   server: {
     port: 3030,
