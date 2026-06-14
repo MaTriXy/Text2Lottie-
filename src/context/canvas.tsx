@@ -125,17 +125,22 @@ export function CanvasProvider(props: { children: JSX.Element }) {
     if (playing()) { lastTs = 0; }
   });
 
+  // Autoplay on the very first scene load; on later scene switches we restart
+  // at frame 0 but keep whatever play/pause state the user was in.
+  let autoplayPending = true;
   createEffect(() => {
     const raw = searchParams.frame;
-    const total = totalFrames();
+    currentScene(); // restart playback whenever the scene changes
     untrack(() => {
       const frame = raw != null ? Number(raw) : null;
       if (frame != null && Number.isFinite(frame)) {
         setPlaying(false);
         seek(frame);
-      } else if (total > 0) {
-        setPlaying(true);
+      } else {
+        if (autoplayPending) setPlaying(true);
+        seek(0);
       }
+      autoplayPending = false;
     });
   });
 

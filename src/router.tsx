@@ -4,13 +4,16 @@ import { CenteredContainer } from "@/components/ui/container";
 import { App } from "./app";
 import { CanvasProvider } from "./context/canvas";
 import { ScenesProvider, useScenes } from "./context/scenes";
+import { UIProvider } from "./context/ui";
 
 function Providers(props: { children?: JSX.Element }) {
   return (
     <ScenesProvider>
-      <CanvasProvider>
-        {props.children}
-      </CanvasProvider>
+      <UIProvider>
+        <CanvasProvider>
+          {props.children}
+        </CanvasProvider>
+      </UIProvider>
     </ScenesProvider>
   );
 }

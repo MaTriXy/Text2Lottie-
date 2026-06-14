@@ -3,6 +3,7 @@ import { createSignal, For, Show, type JSX } from "solid-js";
 import { useParams } from "@solidjs/router";
 import { useCanvas } from "@/context/canvas";
 import { useScenes } from "@/context/scenes";
+import { useUI } from "@/context/ui";
 import { NumericSlider } from "@/components/ui/numeric-slider";
 import { Icon } from "@/components/ui/icon";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -30,6 +31,7 @@ export function SidebarRight() {
   const { slots, zoom, controls, setScalarSlot, setColorSlot, setVec2Slot, setTextSlot, commitSource, zoomByCentered, resetCamera } = useCanvas();
   const params = useParams();
   const { findProject } = useScenes();
+  const { controlsExpanded } = useUI();
   const [edits, setEdits] = createSignal<Record<string, AnimationSlot["value"]>>({});
 
   const set = (id: string, value: AnimationSlot["value"]) =>
@@ -43,7 +45,13 @@ export function SidebarRight() {
   };
 
   return (
-    <div class="absolute right-4 top-4 flex flex-col w-[236px] max-h-full rounded-2xl gap-0 bg-background border border-border">
+    <div
+      class="absolute right-4 top-4 flex flex-col max-h-full rounded-2xl gap-0 bg-background border border-border"
+      classList={{ 
+        "w-[188px]": !controlsExpanded(),
+        "w-[236px]": controlsExpanded(),
+      }}
+    >
       <div class="flex items-center justify-between h-12 px-3 pl-4">
         <DropdownMenu>
           <DropdownMenuTrigger class="flex items-center text-muted-foreground hover:text-foreground">
@@ -73,7 +81,7 @@ export function SidebarRight() {
         </Button>
       </div>
 
-      <Show when={slots().length > 0}>
+      <Show when={controlsExpanded() && slots().length > 0}>
         <Group title="Properties">
           <For each={slots()}>
             {(slot) => {
