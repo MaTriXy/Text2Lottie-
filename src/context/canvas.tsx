@@ -2,7 +2,8 @@ import { Accessor, createContext, createEffect, createResource, createMemo, crea
 import { useParams, useSearchParams } from "@solidjs/router";
 import { ControlMeta, AnimationSlot, Scene } from '@/types';
 import { useScenes } from '@/context/scenes';
-import CanvasKitInit from "canvaskit-wasm/full";
+import { getCanvasKit } from '@/lib/canvaskit';
+import { loadScene } from '@/lib/scene';
 import type { CanvasKit, Surface, ManagedSkottieAnimation, Font, Paint, Typeface } from "canvaskit-wasm/full";
 
 const MIN_ZOOM = 0.1;
@@ -48,7 +49,7 @@ export function CanvasProvider(props: { children: JSX.Element }) {
   const [searchParams] = useSearchParams();
   const [playing, setPlaying] = createSignal(false);
   const [currentFrame, setCurrentFrame] = createSignal(0);
-  const [canvasKit] = createResource(loadCanvasKit);
+  const [canvasKit] = createResource(getCanvasKit);
   const currentScene = createMemo(() => {
     const { project, scene } = params;
     if (!project || !scene) return null;
@@ -425,32 +426,6 @@ export function useCanvas() {
     throw new Error('useCanvas must be used within a CanvasProvider');
   }
   return context;
-}
-
-function loadCanvasKit(): Promise<CanvasKit> {
-  return CanvasKitInit({ locateFile: () => "/canvaskit.wasm" })
-}
-
-async function loadScene(scene: Scene): Promise<{ json: string; assets: Record<string, ArrayBuffer> }> {
-  const res = await fetch(scene.lottie);
-  if (!res.ok) {
-    throw new Error(`Failed to load ${scene.lottie} (HTTP ${res.status})`);
-  }
-  const json = await res.text();
-
-  // Fetch image assets keyed by filename, matching the lottie's `assets[].p` values
-  // so MakeManagedAnimation can resolve them.
-  const assets: Record<string, ArrayBuffer> = {};
-  await Promise.all(
-    scene.images.map(async (url) => {
-      const imgRes = await fetch(url);
-      if (imgRes.ok) {
-        assets[url.split("/").pop()!] = await imgRes.arrayBuffer();
-      }
-    }),
-  );
-
-  return { json, assets };
 }
 
 async function loadLabelTypeface(ck: CanvasKit): Promise<Typeface | null> {

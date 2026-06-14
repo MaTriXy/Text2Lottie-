@@ -1,7 +1,9 @@
-import { For } from "solid-js";
+import { For, Show, createResource } from "solid-js";
 import { useNavigate, useParams } from "@solidjs/router";
 import { Icon } from "@/components/ui/icon";
 import { useScenes } from "@/context/scenes";
+import { getThumbnail } from "@/lib/thumbnails";
+import { Scene } from "@/types";
 
 export function ScenesContainer() {
   const params = useParams();
@@ -24,25 +26,7 @@ export function ScenesContainer() {
   return (
     <div class="flex items-start justify-center gap-4">
       <For each={scenes()}>
-        {(scene) => {
-          const active = () => scene.slug === params.scene;
-          return (
-            <button
-              type="button"
-              class="flex flex-col gap-2 w-[114px] shrink-0"
-              onClick={() => navigate(`/${params.project}/${scene.slug}`)}
-            >
-              <div
-                class="aspect-video w-full overflow-hidden rounded-md bg-background"
-                classList={{
-                  "border border-border": !active(),
-                  "border-2 border-primary": active(),
-                }}
-              />
-              <span class="text-center text-xxs text-muted-foreground">{scene.label}</span>
-            </button>
-          );
-        }}
+        {(scene) => <SceneItem scene={scene} active={scene.slug === params.scene} />}
       </For>
 
       <button
@@ -54,4 +38,37 @@ export function ScenesContainer() {
       </button>
     </div>
   );
+}
+
+type SceneItemProps = {
+  scene: Scene;
+  active: boolean;
+}
+
+function SceneItem(props: SceneItemProps) {
+  const [thumbnail] = createResource(() => props.scene, getThumbnail);
+
+  const params = useParams();
+  const navigate = useNavigate();
+
+  return (
+    <button
+      type="button"
+      class="flex flex-col gap-2 w-[114px] shrink-0"
+      onClick={() => navigate(`/${params.project}/${props.scene.slug}`)}
+    >
+      <div
+        class="aspect-video w-full overflow-hidden rounded-md bg-background"
+        classList={{
+          "border border-border": !props.active,
+          "border-2 border-primary": props.active,
+        }}
+      >
+        <Show when={thumbnail()}>
+          <img src={thumbnail()} alt={props.scene.label} class="h-full w-full object-cover" />
+        </Show>
+      </div>
+      <span class="text-center text-xxs text-muted-foreground">{props.scene.label}</span>
+    </button>
+  )
 }
