@@ -277,28 +277,50 @@ export function scenesPlugin(): Plugin {
         res.end(JSON.stringify(body));
       };
 
-      // Create a new project with a default scene. Body: { name }.
+      // Create a new project with a default scene (POST, body: { name }), or
+      // delete an existing project and all its scenes (DELETE, body: { project }).
       server.middlewares.use("/__scenes/project", async (req, res) => {
-        if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
         const body = await readJsonBody(req);
-        const projectSlug = uniqueDir(projectsDir, slugify(String(body.name ?? "")));
-        const sceneSlug = "scene-1";
-        createScene(path.join(projectsDir, projectSlug, sceneSlug));
-        json(res, 201, { project: projectSlug, scene: sceneSlug });
+        if (req.method === "POST") {
+          const projectSlug = uniqueDir(projectsDir, slugify(String(body.name ?? "")));
+          const sceneSlug = "scene-1";
+          createScene(path.join(projectsDir, projectSlug, sceneSlug));
+          return json(res, 201, { project: projectSlug, scene: sceneSlug });
+        }
+        if (req.method === "DELETE") {
+          const projectDir = path.resolve(projectsDir, String(body.project ?? ""));
+          if (!projectDir.startsWith(projectsDir + path.sep) || !fs.existsSync(projectDir)) {
+            return json(res, 404, { error: "project not found" });
+          }
+          fs.rmSync(projectDir, { recursive: true, force: true });
+          return json(res, 200, { ok: true });
+        }
+        json(res, 405, { error: "method not allowed" });
       });
 
-      // Append a new default scene to an existing project. Body: { project }.
+      // Append a new default scene to a project (POST, body: { project }), or
+      // delete a scene (DELETE, body: { project, scene }).
       server.middlewares.use("/__scenes/scene", async (req, res) => {
-        if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
         const body = await readJsonBody(req);
-        const projectSlug = String(body.project ?? "");
-        const projectDir = path.resolve(projectsDir, projectSlug);
-        if (!projectDir.startsWith(projectsDir + path.sep) || !fs.existsSync(projectDir)) {
-          return json(res, 404, { error: "project not found" });
+        if (req.method === "POST") {
+          const projectSlug = String(body.project ?? "");
+          const projectDir = path.resolve(projectsDir, projectSlug);
+          if (!projectDir.startsWith(projectsDir + path.sep) || !fs.existsSync(projectDir)) {
+            return json(res, 404, { error: "project not found" });
+          }
+          const sceneSlug = nextSceneSlug(projectDir);
+          createScene(path.join(projectDir, sceneSlug));
+          return json(res, 201, { project: projectSlug, scene: sceneSlug });
         }
-        const sceneSlug = nextSceneSlug(projectDir);
-        createScene(path.join(projectDir, sceneSlug));
-        json(res, 201, { project: projectSlug, scene: sceneSlug });
+        if (req.method === "DELETE") {
+          const sceneDir = path.resolve(projectsDir, String(body.project ?? ""), String(body.scene ?? ""));
+          if (!sceneDir.startsWith(projectsDir + path.sep) || !fs.existsSync(sceneDir)) {
+            return json(res, 404, { error: "scene not found" });
+          }
+          fs.rmSync(sceneDir, { recursive: true, force: true });
+          return json(res, 200, { ok: true });
+        }
+        json(res, 405, { error: "method not allowed" });
       });
 
       // Overwrite a scene's lottie.json source. Body: { project, scene, doc }.

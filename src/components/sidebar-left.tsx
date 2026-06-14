@@ -1,9 +1,18 @@
 import { createSignal, For, Show } from "solid-js";
 import { useNavigate, useParams } from "@solidjs/router";
+import { Trash } from "lucide-solid";
 import { Icon } from "@/components/ui/icon";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { useScenes } from "@/context/scenes";
 import { useUI } from "@/context/ui";
 import { Button } from "./ui/button";
+
+import type { Project } from "@/types";
 
 export function SidebarLeft() {
   const params = useParams();
@@ -45,6 +54,17 @@ export function SidebarLeft() {
       el.focus();
       el.select();
     });
+  }
+
+  const deleteProject = async (project: Project) => {
+    await fetch("/__scenes/project", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project: project.slug }),
+    });
+    // If the active project was removed, let the default route pick a new one.
+    // The tree refreshes over HMR.
+    if (project.slug === params.project) navigate("/");
   }
 
   return (
@@ -95,21 +115,30 @@ export function SidebarLeft() {
             {(project) => {
               const active = () => project.slug === params.project;
               return (
-                <button
-                  type="button"
-                  onClick={() => navigate(`/${project.slug}/${project.scenes[0]?.slug ?? ""}`)}
-                  class="flex items-center h-7 rounded-md px-0.5 gap-1.5 my-0.5 flex-1"
-                  classList={{
-                    "bg-muted text-foreground": active(),
-                    "text-muted-foreground": !active(),
-                  }}
-                >
-                  <Icon name="folder" />
-                  <span class="text-xxs">{project.label}</span>
-                  <Show when={active()}>
-                    <Icon name="confirm-check" class="ml-auto" />
-                  </Show>
-                </button>
+                <ContextMenu>
+                  <ContextMenuTrigger
+                    as="button"
+                    type="button"
+                    onClick={() => navigate(`/${project.slug}/${project.scenes[0]?.slug ?? ""}`)}
+                    class="flex items-center h-7 rounded-md px-0.5 gap-1.5 my-0.5 flex-1"
+                    classList={{
+                      "bg-muted text-foreground": active(),
+                      "text-muted-foreground": !active(),
+                    }}
+                  >
+                    <Icon name="folder" />
+                    <span class="text-xxs">{project.label}</span>
+                    <Show when={active()}>
+                      <Icon name="confirm-check" class="ml-auto" />
+                    </Show>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem onSelect={() => deleteProject(project)}>
+                      <Trash />
+                      <span>Delete project</span>
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               );
             }}
           </For>
