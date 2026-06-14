@@ -153,6 +153,84 @@ function scanScene(projectSlug: string, sceneSlug: string, sceneDir: string): Sc
   };
 }
 
+/** mtime of a scene's source (lottie.json), as an ISO string; null if missing. */
+function sceneLastModified(sceneDir: string): string | null {
+  try {
+    return fs.statSync(path.join(sceneDir, "lottie.json")).mtime.toISOString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Last playback snapshot reported by the browser. Only updated on discrete
+ * events (scene change, play, pause, scrub) — never per-frame — so the live
+ * frame is *computed* on read from elapsed time rather than streamed.
+ */
+interface LiveState {
+  project: string | null;
+  scene: string | null;
+  playing: boolean;
+  frame: number;
+  totalFrames: number;
+  fps: number;
+  reportedAt: number; // server epoch ms when this snapshot arrived
+}
+
+/** Agent-facing snapshot: filesystem tree (+ mtimes) merged with live playback. */
+function buildContext(projectsDir: string, live: LiveState | null, now: number) {
+  const projects = listDirs(projectsDir)
+    .sort()
+    .map((projectSlug) => {
+      const projectDir = path.join(projectsDir, projectSlug);
+      const scenes = listDirs(projectDir)
+        .map((sceneSlug) => {
+          const sceneDir = path.join(projectDir, sceneSlug);
+          if (!fs.existsSync(path.join(sceneDir, "lottie.json"))) return null;
+          return {
+            slug: sceneSlug,
+            label: titleCase(sceneSlug),
+            order: sceneOrder(sceneSlug),
+            active: live?.project === projectSlug && live?.scene === sceneSlug,
+            lastModified: sceneLastModified(sceneDir),
+          };
+        })
+        .filter((s): s is NonNullable<typeof s> => s !== null)
+        .sort((a, b) => a.order - b.order || a.slug.localeCompare(b.slug));
+      if (scenes.length === 0) return null;
+      return {
+        slug: projectSlug,
+        label: titleCase(projectSlug),
+        active: live?.project === projectSlug,
+        scenes,
+      };
+    })
+    .filter((p): p is NonNullable<typeof p> => p !== null);
+
+  // While playing, advance the reported frame by the time since it was reported,
+  // wrapping at totalFrames — mirrors the browser's rAF loop. Paused → as-is.
+  let currentFrame = live?.frame ?? 0;
+  if (live?.playing && live.fps > 0 && live.totalFrames > 0) {
+    const elapsed = (now - live.reportedAt) / 1000;
+    currentFrame = (live.frame + elapsed * live.fps) % live.totalFrames;
+  }
+
+  return {
+    generatedAt: new Date(now).toISOString(),
+    live: {
+      hasClient: live !== null,
+      activeProject: live?.project ?? null,
+      activeScene: live?.scene ?? null,
+      playing: live?.playing ?? false,
+      currentFrame: Math.round(currentFrame * 1000) / 1000,
+      totalFrames: live?.totalFrames ?? 0,
+      fps: live?.fps ?? 0,
+      reportedAt: live ? new Date(live.reportedAt).toISOString() : null,
+    },
+    projects,
+  };
+}
+
 /** Discover all projects/scenes under `projectsDir` into an ordered tree. */
 export function scanProjects(projectsDir: string): ScenesTree {
   const projects: Project[] = [];
@@ -183,6 +261,7 @@ export function scanProjects(projectsDir: string): ScenesTree {
  */
 export function scenesPlugin(): Plugin {
   let projectsDir = "";
+  let live: LiveState | null = null; // latest browser playback snapshot
 
   return {
     name: "scenes-discovery",
@@ -238,6 +317,28 @@ export function scenesPlugin(): Plugin {
         if (!body.doc || typeof body.doc !== "object") return json(res, 400, { error: "missing doc" });
         fs.writeFileSync(lottiePath, JSON.stringify(body.doc, null, 2));
         json(res, 200, { ok: true });
+      });
+
+      // Agent-facing application context.
+      //   GET  -> projects/scenes (+ mtimes), active project/scene, playback.
+      //   POST -> browser heartbeat; body: { project, scene, playing, frame, totalFrames, fps }.
+      // The browser only POSTs on discrete events (scene change, play, pause,
+      // scrub); GET computes the live frame from elapsed time, so no streaming.
+      server.middlewares.use("/__context", async (req, res) => {
+        if (req.method === "POST") {
+          const body = await readJsonBody(req);
+          live = {
+            project: body.project != null ? String(body.project) : null,
+            scene: body.scene != null ? String(body.scene) : null,
+            playing: Boolean(body.playing),
+            frame: Number(body.frame) || 0,
+            totalFrames: Number(body.totalFrames) || 0,
+            fps: Number(body.fps) || 0,
+            reportedAt: Date.now(),
+          };
+          return json(res, 200, { ok: true });
+        }
+        json(res, 200, buildContext(projectsDir, live, Date.now()));
       });
 
       server.middlewares.use("/__scenes", (_req, res) => {

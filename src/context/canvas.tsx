@@ -139,6 +139,32 @@ export function CanvasProvider(props: { children: JSX.Element }) {
     });
   });
 
+  let timer: number | undefined;
+  createEffect(() => {
+    const project = params.project ?? null;
+    const scene = params.scene ?? null;
+    const isPlaying = playing();
+    const frame = isPlaying ? untrack(currentFrame) : currentFrame();
+    const payload = {
+      project,
+      scene,
+      playing: isPlaying,
+      frame: Math.round(frame),
+      totalFrames: untrack(totalFrames),
+      fps: untrack(fps),
+    };
+    clearTimeout(timer); // coalesce rapid scrubs into one post
+    timer = window.setTimeout(() => {
+      void fetch("/__context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).catch(() => { });
+    }, 60);
+  });
+
+  onCleanup(() => clearTimeout(timer));
+
   const setScalarSlot = (id: string, value: number) => {
     animation()?.setScalarSlot(id, value);
     dirty = true;
